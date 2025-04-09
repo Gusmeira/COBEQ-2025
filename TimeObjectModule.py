@@ -45,16 +45,18 @@ data.reset_index(drop=True)
 
 # TIME OBJECT =======================================================================================
 class TimeObject:
-    def __init__(self, df:pd.DataFrame, column:str, 
-                 NAN_treatment_args:dict={'method':'from_derivatives'},
-                 agg_freq:str='W', col_name:str='AQI') -> None:
+    def __init__(self, df:pd.DataFrame, column:str, agg_freq:str='W',
+                 col_name:str='AQI', time_col_name:str='date',
+                 NAN_treatment_args:dict={'method':'from_derivatives'}) -> None:
 
-        self.df = df[['date',column]]
+        self.df = df[[time_col_name,column]]
         self.column = column
         self.col_name = col_name
+        self.time_col_name = time_col_name
         self.time_serie = self.to_serie_()
+        self.NAN_treatment_args = NAN_treatment_args
 
-        self.NAN_treatment_(**NAN_treatment_args)
+        if self.NAN_treatment_args is not None: self.NAN_treatment_(**self.NAN_treatment_args)
         self.NIXTLA_treatment_()
         if agg_freq != None: 
             self.nixtla_df = self.nixtla_df.groupby(pd.Grouper(key='ds', freq=agg_freq)).agg({'y': 'mean'}).reset_index()
@@ -63,7 +65,7 @@ class TimeObject:
 # ====================================================================================================
     def to_serie_(self) -> pd.Series:
         time_serie = self.df[self.column].fillna(np.nan)
-        time_serie.index = pd.to_datetime(self.df['date'])
+        time_serie.index = pd.to_datetime(self.df[self.time_col_name])
 
         full_index = pd.date_range(start=time_serie.index.min(), end=time_serie.index.max(), freq='D')
         time_serie = time_serie.reindex(full_index)
@@ -110,7 +112,7 @@ class TimeObject:
     def plot_time_series(self):
         fig = go.Figure()
         fig.add_trace(trace=go.Scatter(
-            x=self.Y_train['ds'], y=self.Y_train['y'],
+            x=self.nixtla_df['ds'], y=self.nixtla_df['y'],
             mode='lines', marker=go.scatter.Marker(
                 color='black'
             ), name='Time Series'
@@ -242,7 +244,9 @@ class TimeObject:
 # ====================================================================================================
     def plot_train_test_interval(self, initial_train_date:str=None, upto_train_date:str=None, 
                                  initial_test_date:str=None, upto_test_date:str=None, index_plot:list=None,
-                                 train_color:str='108, 99, 96', test_color:str='167, 73, 193'):
+                                 train_color:str='108, 99, 96', test_color:str='167, 73, 193',
+                                 show_entire_time_series:bool=False, min_y:int=0, max_y:int=100,
+                                 width:int=1100, height:int=450):
         """
         ``index_plot``: [First_Train_Obs, Last_Train_Obs, Horizon]
         """
@@ -250,8 +254,8 @@ class TimeObject:
         try:
             if index_plot is not None:
                 initial_train_date = self.nixtla_df['ds'].dt.strftime('%Y-%m-%d').iloc[index_plot[0]]
-                upto_train_date = self.nixtla_df['ds'].dt.strftime('%Y-%m-%d').iloc[index_plot[1]]
-                upto_test_date = self.nixtla_df['ds'].dt.strftime('%Y-%m-%d').iloc[index_plot[1]+index_plot[2]]
+                upto_train_date = self.nixtla_df['ds'].dt.strftime('%Y-%m-%d').iloc[index_plot[0]+index_plot[1]-1]
+                upto_test_date = self.nixtla_df['ds'].dt.strftime('%Y-%m-%d').iloc[index_plot[0]+index_plot[1]-1+index_plot[2]]
         except IndexError:
             raise IndexError(
                 f'IndexError | Only {len(self.nixtla_df)} rows available, '
@@ -259,32 +263,63 @@ class TimeObject:
             )
         if initial_test_date is None: initial_test_date = upto_train_date
         fig.add_trace(go.Scatter(
-            x=[initial_train_date,initial_train_date], y=[0, 100], showlegend=False,
+            x=[initial_train_date,initial_train_date], y=[min_y, max_y], showlegend=False,
             mode='lines', line=dict(color=f'rgb({train_color})', dash='dash')
         ))
         fig.add_trace(go.Scatter(
-            x=[upto_train_date,upto_train_date], y=[0, 100], name='Train Window',
+            x=[upto_train_date,upto_train_date], y=[min_y, max_y], name='Train Window',
             mode='lines', line=dict(color=f'rgb({train_color})', dash='dash'),
             fill='tonexty', fillcolor=f'rgba({train_color}, 0.15)'
         ))
         fig.add_trace(go.Scatter(
-            x=[initial_test_date,initial_test_date], y=[0, 100], showlegend=False,
+            x=[initial_test_date,initial_test_date], y=[min_y, max_y], showlegend=False,
             mode='lines', line=dict(color=f'rgb({test_color})', dash='dash'),
         ))
         fig.add_trace(go.Scatter(
-            x=[upto_test_date,upto_test_date], y=[0, 100], name='Test Window',
+            x=[upto_test_date,upto_test_date], y=[min_y, max_y], name='Test Window',
             mode='lines', line=dict(color=f'rgb({test_color})', dash='dash'),
             fill='tonexty', fillcolor=f'rgba({test_color}, 0.1)'
         ))
-        fig.add_trace(trace=go.Scatter(
-            x=self.Y_train['ds'], y=self.Y_train['y'],
-            mode='lines', marker=go.scatter.Marker(
-                color='black'
-            ), name='Time Series'
-        ))
-        main_layout(fig=fig, width=1100, height=450, title='Time Series | Train & Test Windows', x='time', y=self.col_name, y_range=[0,None])
+        if show_entire_time_series:
+            fig.add_trace(trace=go.Scatter(
+                x=self.nixtla_df['ds'], y=self.nixtla_df['y'],
+                mode='lines', marker=go.scatter.Marker(
+                    color='black'
+                ), name='Time Series'
+            ))
+        else:
+            fig.add_trace(trace=go.Scatter(
+                x=self.nixtla_df[self.nixtla_df['ds'] <= self.Y_test['ds'].dt.strftime('%Y-%m-%d').values[-1]]['ds'],
+                y=self.nixtla_df[self.nixtla_df['ds'] <= self.Y_test['ds'].dt.strftime('%Y-%m-%d').values[-1]]['y'],
+                mode='lines', marker=go.scatter.Marker(
+                    color='black'
+                ), name='Time Series'
+            ))
+        main_layout(fig=fig, width=width, height=height, title='Time Series | Train & Test Windows', x='time', y=self.col_name, y_range=[0,None])
         return fig
 # ====================================================================================================
+    def fixed_origin_rolling_window_cross_validation(self, initial_train_date=None, 
+                                                     total_data_points:int=100, h=7,
+                                                     plot_interval:bool=True, **kwargs):
+        
+        if (initial_train_date is not None) & (isinstance(initial_train_date, str)):
+            self.nixtla_df = self.nixtla_df[self.nixtla_df['ds'] >= initial_train_date]
+        if (initial_train_date is not None) & (isinstance(initial_train_date, int)):
+            self.nixtla_df = self.nixtla_df.iloc[initial_train_date:,:]
+
+        self.Y_train = self.nixtla_df.iloc[:total_data_points-h,:]
+        self.Y_test = self.nixtla_df.iloc[total_data_points-h:total_data_points,:]
+
+        if plot_interval:
+            self.plot_train_test_interval(
+                initial_train_date=self.Y_train['ds'].dt.strftime('%Y-%m-%d').values[0],
+                upto_train_date=self.Y_train['ds'].dt.strftime('%Y-%m-%d').values[-1],
+                initial_test_date=self.Y_train['ds'].dt.strftime('%Y-%m-%d').values[-1],
+                upto_test_date=self.Y_test['ds'].dt.strftime('%Y-%m-%d').values[-1],
+                **kwargs
+            ).show()
+
+        return self.Y_test
 
 
 
