@@ -98,7 +98,10 @@ class TimeObject:
         def smape(y_true, y_pred):
             summation = 0
             for i in range(len(y_true)):
-                summation += np.abs(y_true[i]-y_pred[i])/(np.abs(y_true[i]) + np.abs(y_pred[i]))
+                try:
+                    summation += np.abs(y_true[i]-y_pred[i])/(np.abs(y_true[i]) + np.abs(y_pred[i]))
+                except:
+                    summation += 0
             return 200/(len(y_true)+1) * summation
         
         self.metrics = {}
@@ -300,7 +303,7 @@ class TimeObject:
 # ====================================================================================================
     def fixed_origin_rolling_window_cross_validation(self, initial_train_date=None, 
                                                      total_data_points:int=100, h=7,
-                                                     plot_interval:bool=True, **kwargs):
+                                                     plot_interval:bool=False, **kwargs):
         
         if (initial_train_date is not None) & (isinstance(initial_train_date, str)):
             self.nixtla_df = self.nixtla_df[self.nixtla_df['ds'] >= initial_train_date]
