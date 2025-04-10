@@ -88,7 +88,7 @@ class TimeObject:
         ))
         return fig
 # ====================================================================================================
-    def NIXTLA_train_test(self, split:int=12):
+    def NIXTLA_train_test(self, split:int=1):
         self.split = split
         self.Y_train = self.nixtla_df[self.nixtla_df.ds<self.nixtla_df['ds'].values[-split]]
         self.Y_test = self.nixtla_df[self.nixtla_df.ds>=self.nixtla_df['ds'].values[-split]].reset_index(drop=True)
@@ -96,6 +96,8 @@ class TimeObject:
     def metrics_(self, forecast_df:pd.DataFrame, method:str='NHITS'):
 
         def smape(y_true, y_pred):
+            y_true = y_true.reset_index(drop=True)
+            y_pred = y_pred.reset_index(drop=True)
             summation = 0
             for i in range(len(y_true)):
                 try:
